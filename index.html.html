@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="세계증시">
+<meta name="theme-color" content="#05080f">
+<title>세계 증시 전광판</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&family=Red+Hat+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+/* VOICE: 증권사 객장 전광판 — 차갑고 정확하게, 숫자가 주인공
+   IDEA: 트레이딩 플로어 벽면 멀티 모니터
+   PICTURE: 2x2 대형 지수 차트 + 히트맵 + 등락률 시세판
+   COLOUR: 거의 검정 남색 바탕, 얇은 패널 경계, 시계/개장 표시만 강조색
+   LAYOUT: 상단 시계·티커 → 차트 4분할 + 우측 시세판 → 하단 히트맵 */
+:root{--bg:#05080f;--panel:#0a1020;--line:#1a2440;--ink:#e6ecf8;--dim:#7d8bab;--up:#ff4d5e;--down:#3d8bff;--open:#2fd17a;--gap:6px}
+*{box-sizing:border-box;min-width:0}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:15px/1.4 "IBM Plex Sans KR",system-ui,sans-serif;overflow:hidden}
+body{padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+.app{display:grid;height:100%;grid-template-rows:auto 46px minmax(0,1.45fr) minmax(0,1fr);gap:var(--gap);padding:var(--gap)}
+header{display:flex;align-items:center;gap:18px;padding:4px 8px;flex-wrap:wrap}
+h1{margin:0;font-size:19px;font-weight:700;letter-spacing:-.01em;white-space:nowrap}
+.clocks{display:flex;gap:16px;flex:1;flex-wrap:wrap}
+.clk{display:flex;align-items:baseline;gap:8px;white-space:nowrap}
+.clk b{font:700 20px "Red Hat Mono",monospace}
+.clk span{font-size:13px;color:var(--dim)}
+.st{font-size:12px;padding:2px 8px;border-radius:99px;border:1px solid var(--line);color:var(--dim)}
+.st.on{color:var(--open);border-color:var(--open)}
+.btns{display:flex;gap:6px}
+button{font:600 14px inherit;font-family:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:8px;min-height:40px;padding:0 14px;cursor:pointer}
+button[aria-pressed=true]{border-color:var(--open);color:var(--open)}
+button:focus-visible{outline:2px solid var(--open);outline-offset:2px}
+.tape,.p{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;position:relative}
+.main{display:grid;grid-template-columns:minmax(0,2.3fr) minmax(0,1fr);gap:var(--gap)}
+.charts{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:var(--gap)}
+.bottom{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:var(--gap)}
+.p>.lab{position:absolute;z-index:2;top:6px;right:10px;font-size:12px;color:var(--dim);pointer-events:none;background:#0a1020cc;padding:1px 6px;border-radius:4px}
+.tabs{display:flex;gap:4px;padding:6px;border-bottom:1px solid var(--line);overflow-x:auto}
+.tabs button{min-height:34px;padding:0 10px;font-size:13px;flex:none}
+.side{display:grid;grid-template-rows:auto minmax(0,1fr)}
+.w{position:absolute;inset:0}
+.side .w,.heat .w{position:relative;height:100%}
+.heat{display:grid;grid-template-rows:auto minmax(0,1fr)}
+.tradingview-widget-container,.tradingview-widget-container__widget{height:100%;width:100%}
+.tradingview-widget-copyright{display:none}
+@media (orientation:portrait),(max-width:900px){
+  html,body{overflow:auto}
+  .app{height:auto;grid-template-rows:auto 46px auto auto}
+  .main,.bottom{grid-template-columns:1fr}
+  .charts{height:70vh}
+  .side,.heat,.bottom>.p{height:60vh}
+}
+@media (max-width:600px){.charts{grid-template-columns:1fr;grid-template-rows:repeat(4,1fr);height:150vh}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>세계 증시 전광판</h1>
+    <div class="clocks">
+      <div class="clk"><span>서울</span><b id="tSeoul">--:--:--</b><em class="st" id="sKR">확인 중</em></div>
+      <div class="clk"><span>뉴욕</span><b id="tNY">--:--:--</b><em class="st" id="sUS">확인 중</em></div>
+      <div class="clk"><span>런던</span><b id="tLDN">--:--</b></div>
+      <div class="clk"><span>도쿄</span><b id="tTYO">--:--</b></div>
+    </div>
+    <div class="btns">
+      <button id="bWake" aria-pressed="false">화면 켜둠</button>
+      <button id="bFull">전체 화면</button>
+    </div>
+  </header>
+
+  <div class="tape" id="tape"></div>
+
+  <section class="main">
+    <div class="charts">
+      <div class="p"><span class="lab">코스피</span><div class="w" id="c1"></div></div>
+      <div class="p"><span class="lab">나스닥 종합</span><div class="w" id="c2"></div></div>
+      <div class="p"><span class="lab">코스닥</span><div class="w" id="c3"></div></div>
+      <div class="p"><span class="lab">S&amp;P 500</span><div class="w" id="c4"></div></div>
+    </div>
+    <div class="p side">
+      <div class="tabs" id="qTabs"></div>
+      <div class="w" id="quotes"></div>
+    </div>
+  </section>
+
+  <section class="bottom">
+    <div class="p heat">
+      <div class="tabs" id="hTabs"></div>
+      <div class="w" id="heat"></div>
+    </div>
+    <div class="p"><div class="w" id="world"></div></div>
+  </section>
+</div>
+
+<script>
+{
+/* ===== 여기만 고치면 종목을 바꿀 수 있어요 ===== */
+const CHARTS = [
+  ["c1","TVC:KOSPI"],      // 안 나오면 "KRX:KOSPI" 로 바꿔 보세요
+  ["c2","NASDAQ:IXIC"],    // 대안: "FOREXCOM:NSXUSD" (나스닥100)
+  ["c3","KRX:KOSDAQ"],
+  ["c4","FOREXCOM:SPXUSD"] // 대안: "SP:SPX"
+];
+const TAPE = [
+  ["TVC:KOSPI","코스피"],["KRX:KOSDAQ","코스닥"],["NASDAQ:IXIC","나스닥"],["FOREXCOM:SPXUSD","S&P500"],
+  ["FOREXCOM:DJI","다우"],["TVC:NI225","닛케이"],["TVC:HSI","항셍"],["FX_IDC:USDKRW","원/달러"],
+  ["TVC:US10Y","미 10년물"],["TVC:GOLD","금"],["TVC:USOIL","WTI"],["BITSTAMP:BTCUSD","비트코인"]
+];
+const QUOTES = {
+  "한국 대형주":[["KRX:005930","삼성전자"],["KRX:000660","SK하이닉스"],["KRX:373220","LG에너지솔루션"],["KRX:207940","삼성바이오"],["KRX:005380","현대차"],["KRX:000270","기아"],["KRX:012450","한화에어로"],["KRX:329180","HD현대중공업"],["KRX:105560","KB금융"],["KRX:068270","셀트리온"],["KRX:035420","NAVER"],["KRX:035720","카카오"]],
+  "미국 빅테크":[["NASDAQ:NVDA","엔비디아"],["NASDAQ:AAPL","애플"],["NASDAQ:MSFT","마이크로소프트"],["NASDAQ:GOOGL","알파벳"],["NASDAQ:AMZN","아마존"],["NASDAQ:META","메타"],["NASDAQ:AVGO","브로드컴"],["NASDAQ:TSLA","테슬라"]],
+  "버핏 관심주":[["NYSE:BRK.B","버크셔 B"],["NASDAQ:AAPL","애플"],["NYSE:AXP","아메리칸익스프레스"],["NYSE:BAC","뱅크오브아메리카"],["NYSE:KO","코카콜라"],["NYSE:CVX","셰브론"],["NYSE:OXY","옥시덴탈"],["NYSE:MCO","무디스"]],
+  "환율·원자재":[["FX_IDC:USDKRW","원/달러"],["FX_IDC:JPYKRW","원/엔"],["FX:EURUSD","유로/달러"],["TVC:DXY","달러 인덱스"],["TVC:GOLD","금"],["TVC:SILVER","은"],["TVC:USOIL","WTI 원유"],["TVC:US10Y","미 국채 10년"]]
+};
+const WORLD = {
+  "아시아":[["TVC:KOSPI","코스피"],["KRX:KOSDAQ","코스닥"],["TVC:NI225","닛케이225"],["TVC:HSI","항셍"],["SSE:000001","상하이종합"],["TWSE:TAIEX","대만 가권"],["NSE:NIFTY","인도 니프티"]],
+  "미국":[["NASDAQ:IXIC","나스닥"],["FOREXCOM:SPXUSD","S&P500"],["FOREXCOM:DJI","다우"],["TVC:RUT","러셀2000"],["TVC:VIX","VIX 공포지수"]],
+  "유럽":[["XETR:DAX","독일 DAX"],["TVC:UKX","영국 FTSE"],["TVC:CAC40","프랑스 CAC"],["TVC:SX5E","유로스톡스50"]]
+};
+const HEATS = [["S&P 500","SPX500"],["나스닥 100","NASDAQ100"],["다우 30","DJDJI"]];
+/* ============================================== */
+
+const BASE = "https://s3.tradingview.com/external-embedding/embed-widget-";
+const mount = (id, kind, cfg) => {
+  const host = document.getElementById(id);
+  host.innerHTML = '<div class="tradingview-widget-container"><div class="tradingview-widget-container__widget"></div></div>';
+  const s = document.createElement("script");
+  s.src = BASE + kind + ".js"; s.async = true;
+  s.textContent = JSON.stringify(Object.assign({locale:"kr",colorTheme:"dark",isTransparent:true}, cfg));
+  host.firstChild.appendChild(s);
+};
+const sym = a => a.map(([s,d]) => ({name:s, displayName:d}));
+
+mount("tape","ticker-tape",{symbols:TAPE.map(([s,t])=>({proName:s,title:t})),showSymbolLogo:true,displayMode:"adaptive"});
+
+CHARTS.forEach(([id,s]) => mount(id,"advanced-chart",{
+  autosize:true,symbol:s,interval:"5",timezone:"Asia/Seoul",theme:"dark",style:"3",
+  hide_top_toolbar:true,hide_legend:false,allow_symbol_change:false,save_image:false,
+  backgroundColor:"rgba(10,16,32,1)",gridColor:"rgba(26,36,64,0.6)",withdateranges:true,
+  hide_volume:true,support_host:"https://www.tradingview.com"
+}));
+
+const tabs = (boxId, names, onPick) => {
+  const box = document.getElementById(boxId);
+  box.innerHTML = names.map((n,i)=>`<button data-i="${i}" aria-pressed="${i===0}">${n}</button>`).join("");
+  box.addEventListener("click", e => {
+    const b = e.target.closest("button"); if(!b) return;
+    box.querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed", x===b));
+    onPick(+b.dataset.i);
+  });
+  onPick(0);
+};
+
+const qNames = Object.keys(QUOTES);
+tabs("qTabs", qNames, i => mount("quotes","market-quotes",{
+  width:"100%",height:"100%",showSymbolLogo:true,
+  symbolsGroups:[{name:qNames[i],symbols:sym(QUOTES[qNames[i]])}]
+}));
+
+tabs("hTabs", HEATS.map(h=>h[0]), i => mount("heat","stock-heatmap",{
+  exchanges:[],dataSource:HEATS[i][1],grouping:"sector",blockSize:"market_cap_basic",
+  blockColor:"change",hasTopBar:false,isDataSetEnabled:false,isZoomEnabled:true,
+  hasSymbolTooltip:true,isMonoSize:false,width:"100%",height:"100%"
+}));
+
+mount("world","market-quotes",{width:"100%",height:"100%",showSymbolLogo:true,
+  symbolsGroups:Object.entries(WORLD).map(([n,a])=>({name:n,symbols:sym(a)}))});
+
+/* 시계와 개장 여부 (공휴일은 반영하지 않음) */
+const part = (tz) => {
+  const f = new Intl.DateTimeFormat("en-GB",{timeZone:tz,hour12:false,weekday:"short",hour:"2-digit",minute:"2-digit",second:"2-digit"});
+  const o = {}; f.formatToParts(new Date()).forEach(p=>o[p.type]=p.value);
+  return o;
+};
+const isOpen = (o, from, to) => {
+  if (o.weekday==="Sat"||o.weekday==="Sun") return false;
+  const m = (+o.hour)*60 + (+o.minute);
+  return m >= from && m < to;
+};
+const setSt = (el, open) => { el.textContent = open ? "장중" : "장 마감"; el.classList.toggle("on", open); };
+const tick = () => {
+  const kr = part("Asia/Seoul"), ny = part("America/New_York"), ld = part("Europe/London"), tk = part("Asia/Tokyo");
+  tSeoul.textContent = `${kr.hour}:${kr.minute}:${kr.second}`;
+  tNY.textContent = `${ny.hour}:${ny.minute}:${ny.second}`;
+  tLDN.textContent = `${ld.hour}:${ld.minute}`;
+  tTYO.textContent = `${tk.hour}:${tk.minute}`;
+  setSt(sKR, isOpen(kr, 540, 930));
+  setSt(sUS, isOpen(ny, 570, 960));
+};
+tick(); setInterval(tick, 1000);
+
+/* 화면 꺼짐 방지 */
+let lock = null;
+const bWake = document.getElementById("bWake");
+bWake.addEventListener("click", async () => {
+  try {
+    if (lock) { await lock.release(); lock = null; }
+    else { lock = await navigator.wakeLock.request("screen"); lock.addEventListener("release",()=>{ if(lock&&lock.released){lock=null;bWake.setAttribute("aria-pressed","false");} }); }
+  } catch(e) { bWake.textContent = "설정에서 자동잠금 끄기"; }
+  bWake.setAttribute("aria-pressed", !!lock);
+});
+document.addEventListener("visibilitychange", async () => {
+  if (document.visibilityState==="visible" && bWake.getAttribute("aria-pressed")==="true") {
+    try { lock = await navigator.wakeLock.request("screen"); } catch(e) {}
+  }
+});
+
+/* 전체 화면 */
+document.getElementById("bFull").addEventListener("click", () => {
+  const d = document.documentElement;
+  try {
+    if (document.fullscreenElement || document.webkitFullscreenElement) (document.exitFullscreen||document.webkitExitFullscreen).call(document);
+    else (d.requestFullscreen||d.webkitRequestFullscreen).call(d);
+  } catch(e) {}
+});
+
+/* 6시간마다 새로고침해 위젯을 깨끗하게 유지 */
+setTimeout(() => location.reload(), 6*60*60*1000);
+}
+</script>
+</body>
